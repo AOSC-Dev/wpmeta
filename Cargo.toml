@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "locale",
+    "wpmeta",
+]
+resolver = "2"
