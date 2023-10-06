@@ -8,6 +8,7 @@ use eyre::{Result, WrapErr, bail};
 use image::ImageFormat;
 use image::imageops::FilterType;
 use image::io::Reader as ImageReader;
+use rayon::prelude::*;
 
 use std::fs::{File, copy, create_dir_all, remove_file};
 use std::io::Write;
@@ -117,7 +118,7 @@ fn main() -> Result<()> {
     let metas = walk::walk(&args.src, None)?;
     
     debug!("processing: {:?}", metas);
-    let _: Vec<()> = metas.into_iter().map(|m| {
+    let _: Vec<()> = metas.into_par_iter().map(|m| {
         process_meta(m, &args.dst).wrap_err("failed to process wallpapers").unwrap();
     }).collect();
     Ok(())
