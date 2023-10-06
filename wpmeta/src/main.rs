@@ -77,7 +77,7 @@ fn copy_file(src: &Path, dst: &Path) -> Result<()> {
     } else {
         bail!("invalid destination {}", dst.display());
     }
-    info!("copying {} to {}", src.display(), dst.display());
+    debug!("copying {} to {}", src.display(), dst.display());
     copy(src, dst)?;
     Ok(())
 }
