@@ -9,13 +9,15 @@ use image::ImageFormat;
 use image::imageops::FilterType;
 use image::io::Reader as ImageReader;
 
-use std::fs::{File, copy, create_dir_all};
+use std::fs::{File, copy, create_dir_all, remove_file};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::os::unix::fs::symlink;
 
 use meta::Metadata;
 use generate::{render_gnome, render_kde};
 
+static MATE_META_BASE: &str = "usr/share/mate-background-properties";
 static GNOME_META_BASE: &str = "usr/share/gnome-background-properties";
 static KDE_META_BASE: &str = "usr/share/wallpapers";
 
@@ -86,12 +88,23 @@ fn process_meta(meta: Metadata, dst: &Path) -> Result<()> {
         let target = wallpaper.target(base);
         let gnome_meta = gnome_metas.get(id).unwrap();
         let kde_meta = kde_metas.get(id).unwrap();
+
         info!("{}: writing metadata", id);
-        write_file(&dst.join(GNOME_META_BASE).join(format!("{}.xml", id)), gnome_meta.as_bytes())?;
+        let gnome_meta_file = format!("{}.xml", id);
+        write_file(&dst.join(GNOME_META_BASE).join(&gnome_meta_file), gnome_meta.as_bytes())?;
         write_file(&dst.join(KDE_META_BASE).join(id).join("metadata.json"), kde_meta.as_bytes())?;
+        // Generate symlink for MATE
+        let mate_meta_path = dst.join(MATE_META_BASE).join(&gnome_meta_file);
+        if mate_meta_path.read_link().is_ok() {
+            remove_file(&mate_meta_path)?;
+        }
+        ensure_parent(&mate_meta_path)?;
+        symlink(PathBuf::from("/").join(GNOME_META_BASE).join(&gnome_meta_file), mate_meta_path)?;
+
         let wallpaper_dst = dst.join(target);
         info!("{}: copying wallpaper file {} -> {}", id, src.display(), wallpaper_dst.display());
         copy_file(&src, &wallpaper_dst)?;
+
         info!("{}: generating preview ...", id);
         generate_preview(&src, &dst.join(KDE_META_BASE).join(id).join("contents/screenshot.jpg"))?;
     }
@@ -102,6 +115,7 @@ fn main() -> Result<()> {
     pretty_env_logger::init_custom_env("WPMETA_LOG");
     let args = Args::parse();
     let metas = walk::walk(&args.src, None)?;
+    
     debug!("processing: {:?}", metas);
     let _: Vec<()> = metas.into_iter().map(|m| {
         process_meta(m, &args.dst).wrap_err("failed to process wallpapers").unwrap();
