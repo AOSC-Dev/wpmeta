@@ -105,7 +105,7 @@ mod test {
     <wallpaper deleted="false">
     <name>Kusa</name>
     <name xml:lang="en-US">Grass</name>
-    <filename>/usr/share/wallpapers/Kusa/contents/7680x4320.jpg</filename>
+    <filename>/usr/share/wallpapers/Kusa/contents/images/7680x4320.jpg</filename>
     <options>wallpaper</options>
     <shade_type>solid</shade_type>
     <pcolor>#023C88</pcolor>

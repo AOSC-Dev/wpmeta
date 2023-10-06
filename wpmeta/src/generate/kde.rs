@@ -69,7 +69,7 @@ impl<'a> From<&'a Author> for KPluginAuthor<'a> {
 impl<'a> KPluginMetadata<'a> {
     pub fn from_metadata(src: &'a Metadata) -> Result<HashMap<&'a str, Self>> {
         let authors = match src.authors() {
-            Some(authors) => authors.iter().map(|a| KPluginAuthor::from(a)).collect(),
+            Some(authors) => authors.iter().map(KPluginAuthor::from).collect(),
             None => Vec::new(),
         };
         let wallpapers = src
@@ -92,7 +92,7 @@ impl<'a> KPluginMetadata<'a> {
     }
 }
 
-pub fn render_kde<'a>(metadata: &'a Metadata) -> Result<HashMap<&'a str, String>> {
+pub fn render_kde(metadata: &Metadata) -> Result<HashMap<&str, String>> {
     Ok(KPluginMetadata::from_metadata(metadata)?
         .into_iter()
         .map(|(k, v)| {

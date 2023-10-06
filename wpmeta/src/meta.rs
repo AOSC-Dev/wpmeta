@@ -75,7 +75,7 @@ pub struct Metadata {
 #[inline]
 fn to_owned_option<T>(inner: Option<&T>) -> Option<T>
 where
-    T: Clone
+    T: Clone,
 {
     inner.map(|t| t.to_owned())
 }
@@ -146,7 +146,8 @@ impl WallpaperFile {
     pub fn get_meta(&self, base: &Path) -> &WallpaperFileMeta {
         self.meta.get_or_init(|| {
             // TODO: Use get_or_try_init
-            WallpaperFileMeta::new(&self.id, &base.join(&self.path)).expect("failed to process image metadata")
+            WallpaperFileMeta::new(&self.id, &base.join(&self.path))
+                .expect("failed to process image metadata")
         })
     }
 
@@ -203,7 +204,7 @@ impl Metadata {
     }
 
     pub fn base(&self) -> Option<&Path> {
-        self.base.as_ref().map(|m| m.as_path())
+        self.base.as_deref()
     }
 
     pub fn flatten(&self, base: &Path, parent: Option<&Metadata>) -> Self {

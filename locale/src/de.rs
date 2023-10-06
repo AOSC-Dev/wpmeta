@@ -33,6 +33,8 @@ where
                 M: MapAccess<'de>,
             {
                 let mut default = None;
+                // False positive, the hash function won't read the mutable fields
+                #[allow(clippy::mutable_key_type)]
                 let mut content = HashMap::new();
                 while let Some((k, v)) = map.next_entry::<String, T>()? {
                     if k.to_lowercase() == "default" {

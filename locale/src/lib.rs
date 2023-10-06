@@ -57,7 +57,7 @@ impl Locale {
     }
 
     pub fn to_iso639_1(&self) -> Option<&str> {
-        self.get_language().map(|l| l.to_639_1()).flatten()
+        self.get_language().and_then(|l| l.to_639_1())
     }
 
     pub fn to_iso639_3(&self) -> Option<&str> {
@@ -86,6 +86,10 @@ impl<T> Localized<T> {
 
     pub fn len(&self) -> usize {
         self.content.len() + self.default.as_ref().map(|_| 1).unwrap_or(0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn set(&mut self, locale: Locale, content: T) -> Option<T> {
