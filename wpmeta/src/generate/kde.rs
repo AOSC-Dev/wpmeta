@@ -22,14 +22,19 @@ pub struct KPluginAuthor<'a> {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "KPlugin")]
 #[serde(rename_all = "PascalCase")]
-pub struct KPluginMetadata<'a> {
+pub struct KPluginMetadataInner<'a> {
     authors: Vec<KPluginAuthor<'a>>,
     id: &'a str,
     license: &'a str,
     #[serde(flatten)]
     name: KPluginName<'a>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct KPluginMetadata<'a> {
+    k_plugin: KPluginMetadataInner<'a>,
 }
 
 impl<'a> Serialize for KPluginName<'a> {
@@ -66,6 +71,17 @@ impl<'a> From<&'a Author> for KPluginAuthor<'a> {
     }
 }
 
+impl<'a> KPluginMetadataInner<'a> {
+    pub fn new(authors: Vec<KPluginAuthor<'a>>, id: &'a str, license: &'a str, name: KPluginName<'a>) -> Self {
+        Self {
+            authors,
+            id,
+            license,
+            name,
+        }
+    }
+}
+
 impl<'a> KPluginMetadata<'a> {
     pub fn from_metadata(src: &'a Metadata) -> Result<HashMap<&'a str, Self>> {
         let authors = match src.authors() {
@@ -81,10 +97,7 @@ impl<'a> KPluginMetadata<'a> {
                 (
                     w.id(),
                     Self {
-                        authors: authors.clone(),
-                        id: w.id(),
-                        license: w.license(),
-                        name: w.titles().into(),
+                        k_plugin: KPluginMetadataInner::new(authors.clone(), w.id(), w.license(), w.titles().into())
                     },
                 )
             })
@@ -116,18 +129,19 @@ mod test {
         assert_eq!(
             result.get("Kusa").unwrap(),
             r#"{
-  "KPlugin": "KPluginMetadata",
-  "Authors": [
-    {
-      "Email": "yajuu.senpai@example.com",
-      "Name": "Yajuu Senpai",
-      "Name[zh_CN]": "野兽先辈"
-    }
-  ],
-  "Id": "Kusa",
-  "License": "CC BY-SA 4.0",
-  "Name": "Kusa",
-  "Name[en_US]": "Grass"
+  "KPlugin": {
+    "Authors": [
+      {
+        "Email": "yajuu.senpai@example.com",
+        "Name": "Yajuu Senpai",
+        "Name[zh_CN]": "野兽先辈"
+      }
+    ],
+    "Id": "Kusa",
+    "License": "CC BY-SA 4.0",
+    "Name": "Kusa",
+    "Name[en_US]": "Grass"
+  }
 }"#
         );
     }
