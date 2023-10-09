@@ -145,9 +145,14 @@ impl WallpaperFile {
 
     pub fn get_meta(&self, base: &Path) -> &WallpaperFileMeta {
         self.meta.get_or_init(|| {
+            let id = &self.id;
+            let path = &base.join(&self.path);
             // TODO: Use get_or_try_init
-            WallpaperFileMeta::new(&self.id, &base.join(&self.path))
-                .expect("failed to process image metadata")
+            WallpaperFileMeta::new(id, path).expect(&format!(
+                "{}: failed to process image metadata for image at {}",
+                id,
+                path.display()
+            ))
         })
     }
 
