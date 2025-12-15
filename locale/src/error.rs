@@ -13,7 +13,7 @@ impl fmt::Display for LocaleError {
             Self::InvalidTemplate => "Invalid template string",
             Self::InvalidLocale => "Invalid locale string",
         };
-        write!(f, "{}", msg)
+        write!(f, "{msg}")
     }
 }
 

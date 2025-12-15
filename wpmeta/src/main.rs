@@ -5,8 +5,7 @@ pub mod walk;
 use clap::Parser;
 use eyre::{bail, Result, WrapErr};
 use image::imageops::FilterType;
-use image::io::Reader as ImageReader;
-use image::ImageFormat;
+use image::{ImageFormat, ImageReader};
 use log::{debug, info};
 use rayon::prelude::*;
 
@@ -95,8 +94,8 @@ fn process_meta(meta: Metadata, dst: &Path) -> Result<()> {
         let gnome_meta = gnome_metas.get(id).unwrap();
         let kde_meta = kde_metas.get(id).unwrap();
 
-        info!("{}: writing metadata", id);
-        let gnome_meta_file = format!("{}.xml", id);
+        info!("{id}: writing metadata");
+        let gnome_meta_file = format!("{id}.xml");
         write_file(
             &dst.join(GNOME_META_BASE).join(&gnome_meta_file),
             gnome_meta.as_bytes(),
@@ -127,7 +126,7 @@ fn process_meta(meta: Metadata, dst: &Path) -> Result<()> {
         );
         copy_file(&src, &wallpaper_dst)?;
 
-        info!("{}: generating preview ...", id);
+        info!("{id}: generating preview ...");
         generate_preview(
             &src,
             &dst.join(KDE_META_BASE)
@@ -143,7 +142,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let metas = walk::walk(&args.src, None)?;
 
-    debug!("processing: {:?}", metas);
+    debug!("processing: {metas:?}");
     let _: Vec<()> = metas
         .into_par_iter()
         .map(|m| {

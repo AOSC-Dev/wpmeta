@@ -1,6 +1,6 @@
 use eyre::{eyre, Result};
 use hex_color::HexColor;
-use image::io::Reader;
+use image::ImageReader;
 use serde::{Deserialize, Serialize};
 
 use locale::Localized;
@@ -112,7 +112,7 @@ impl Default for ColorShadingType {
 
 impl WallpaperFileMeta {
     pub fn new(id: &str, file: &Path) -> Result<Self> {
-        let img = Reader::open(file)?.decode()?;
+        let img = ImageReader::open(file)?.decode()?;
         let (width, height) = (img.width(), img.height());
         let extension = file
             .extension()
@@ -122,8 +122,7 @@ impl WallpaperFileMeta {
         // TODO: Implement automatic palette extraction
         Ok(Self {
             target: PathBuf::from(format!(
-                "usr/share/wallpapers/{}/contents/images/{}x{}.{}",
-                id, width, height, extension
+                "usr/share/wallpapers/{id}/contents/images/{width}x{height}.{extension}"
             )),
             dimensions: (width, height),
         })
@@ -148,11 +147,9 @@ impl WallpaperFile {
             let id = &self.id;
             let path = &base.join(&self.path);
             // TODO: Use get_or_try_init
-            WallpaperFileMeta::new(id, path).expect(&format!(
-                "{}: failed to process image metadata for image at {}",
+            WallpaperFileMeta::new(id, path).unwrap_or_else(|_| panic!("{}: failed to process image metadata for image at {}",
                 id,
-                path.display()
-            ))
+                path.display()))
         })
     }
 
