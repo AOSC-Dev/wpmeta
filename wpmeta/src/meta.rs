@@ -3,7 +3,7 @@ use hex_color::HexColor;
 use image::ImageReader;
 use serde::{Deserialize, Serialize};
 
-use locale::Localized;
+use localized::Localized;
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;

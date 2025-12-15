@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use std::collections::HashMap;
 
-use locale::Localized;
+use localized::Localized;
 
 use crate::meta::{Author, Metadata};
 
@@ -46,7 +46,7 @@ impl<'a> Serialize for KPluginName<'a> {
         if let Some(default) = self.inner.get_default() {
             map.serialize_entry("Name", default)?;
         }
-        let flattened = self.inner.generate_hashmap(|l| l.to_locale());
+        let flattened = self.inner.to_hashmap(|l| l.to_string());
         if let Ok(names) = flattened {
             for (locale, name) in names {
                 map.serialize_entry(&format!("Name[{}]", locale.replace('-', "_")), name)?;

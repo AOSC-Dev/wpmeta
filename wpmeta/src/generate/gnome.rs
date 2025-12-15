@@ -3,7 +3,7 @@ use hex_color::HexColor;
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
-use locale::{Locale, Localized};
+use localized::{Locale, Localized};
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -26,7 +26,7 @@ static GNOME_WP_LIST_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Name<'a> {
-    locale: &'a str,
+    locale: String,
     name: &'a str,
 }
 
@@ -44,10 +44,10 @@ pub struct GNOMEWallpaperMeta<'a> {
 impl<'a> Name<'a> {
     pub fn flatten<F>(src: &'a Localized<String>, transform: F) -> Result<Vec<Self>>
     where
-        F: Fn(&Locale) -> &str,
+        F: Fn(&Locale) -> String,
     {
         Ok(src
-            .generate_hashmap(transform)?
+            .to_hashmap(transform)?
             .into_iter()
             .map(|(locale, name)| Self { locale, name })
             .collect())
@@ -58,8 +58,9 @@ impl<'a> GNOMEWallpaperMeta<'a> {
     pub fn new(wallpaper: &'a Wallpaper, base: &Path) -> Result<Self> {
         let titles = wallpaper.titles();
         let default_name = titles.get_default();
-        let names = Name::flatten(titles, |l| l.to_locale())?;
-        let (pcolor, scolor) = wallpaper.colors();
+        // xml:lang tags uses "-" as the delimiter
+        let names = Name::flatten(titles, |l| l.get_locale("-"))?;
+        let (pcolor, color) = wallpaper.colors();
         Ok(Self {
             default_name,
             names,
@@ -67,7 +68,7 @@ impl<'a> GNOMEWallpaperMeta<'a> {
             options: wallpaper.option(),
             shade_type: wallpaper.shade_type(),
             pcolor,
-            scolor,
+            scolor: color,
         })
     }
 }

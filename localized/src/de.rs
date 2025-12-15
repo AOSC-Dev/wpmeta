@@ -1,10 +1,41 @@
-use serde::de::{MapAccess, Visitor};
-use serde::Deserialize;
+use serde::de::{Error, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Formatter;
 
 pub use crate::{Locale, Localized};
+
+impl<'de> Deserialize<'de> for Locale {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct LocaleVisitor {
+            marker: std::marker::PhantomData<fn() -> Locale>,
+        }
+
+        impl<'de> Visitor<'de> for LocaleVisitor {
+            type Value = Locale;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("Locale string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                Ok(Self::Value::new(v))
+            }
+        }
+
+        deserializer.deserialize_str(LocaleVisitor {
+            marker: std::marker::PhantomData,
+        })
+    }
+}
 
 impl<'de, T> Deserialize<'de> for Localized<T>
 where
@@ -12,7 +43,7 @@ where
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         struct LocalizedVisitor<T> {
             marker: std::marker::PhantomData<T>,
@@ -35,7 +66,7 @@ where
                 let mut default = None;
                 // False positive, the hash function won't read the mutable fields
                 #[allow(clippy::mutable_key_type)]
-                let mut content = HashMap::new();
+                let mut content = BTreeMap::new();
                 while let Some((k, v)) = map.next_entry::<String, T>()? {
                     if k.to_lowercase() == "default" {
                         default = Some(v);
@@ -51,34 +82,5 @@ where
         deserializer.deserialize_map(LocalizedVisitor {
             marker: std::marker::PhantomData,
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::collections::HashMap;
-
-    use super::{Locale, Localized};
-
-    #[test]
-    fn test_de() {
-        let example = r#"
-        default = "Kusa"
-        en-US = "Grass"
-        zh-CN = "草"
-        "#;
-
-        let de_result =
-            toml::from_str::<Localized<String>>(example).expect("Unable to deserialize");
-        assert_eq!(
-            Localized::<String> {
-                default: Some("Kusa".into()),
-                content: HashMap::from([
-                    (Locale::new("zh-CN"), "草".into()),
-                    (Locale::new("en-US"), "Grass".into()),
-                ]),
-            },
-            de_result
-        );
     }
 }

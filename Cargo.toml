@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "locale",
+    "localized",
     "wpmeta",
 ]
 resolver = "2"
