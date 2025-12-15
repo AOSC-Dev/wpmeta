@@ -3,4 +3,11 @@ members = [
     "localized",
     "wpmeta",
 ]
-resolver = "2"
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+authors = [
+    "Jiangjin Wang <kaymw@aosc.io>"
+]
+license = "MIT"
