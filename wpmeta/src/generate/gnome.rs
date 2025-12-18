@@ -1,3 +1,8 @@
+//! GNOME metadata generator.
+//!
+//! Produces `gnome-background-properties/*.xml` and, when multiple resolutions exist, a GNOME
+//! background list XML under the wallpaper's `contents/` directory.
+
 use eyre::Result;
 use hex_color::HexColor;
 use log::{info, warn};
@@ -14,7 +19,10 @@ use super::{
     write_file,
 };
 
+/// Name of the gnome-wp-list template.
 const GNOME_WP_LIST_TEMPLATE: &str = "gnome-wp-list";
+
+/// Template for gnome-wp-list.
 static GNOME_WP_LIST_TEMPLATE_STR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
 <wallpapers>
@@ -30,7 +38,10 @@ static GNOME_WP_LIST_TEMPLATE_STR: &str = r#"<?xml version="1.0" encoding="UTF-8
     </wallpaper>
 </wallpapers>"#;
 
+/// Name of the GNOME background list template.
 const GNOME_BACKGROUND_TEMPLATE: &str = "gnome-background";
+
+/// Template for GNOME background list.
 static GNOME_BACKGROUND_TEMPLATE_STR: &str = r#"<background>
     <static>
         <duration>8640000.0</duration>
@@ -83,10 +94,12 @@ struct GNOMEWallpaperList<'a> {
     files: Vec<GNOMEWallpaperFile<'a>>,
 }
 
+/// Generates GNOME wallpaper manifests for a single [`crate::generate::Wallpaper`].
 #[derive(Copy, Clone, Debug)]
 pub struct GNOMEMetadataGenerator;
 
 impl<'a> Name<'a> {
+    /// Generate a vector of names from a [`localized::Localized<String>`].
     pub fn flatten<F>(src: &'a Localized<String>, transform: F) -> Result<Vec<Self>>
     where
         F: Fn(&Locale) -> String,
@@ -147,6 +160,7 @@ impl<'a> GNOMEWallpaperList<'a> {
 }
 
 impl GNOMEMetadataGenerator {
+    /// Generate a list of multi-resolution wallpapers for GNOME.
     fn write_wp_list(
         file_path: &Path,
         target_base: &Path,

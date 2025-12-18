@@ -1,3 +1,8 @@
+//! KDE metadata generator.
+//!
+//! Produces a `metadata.json` compatible with KDE wallpaper plugins and optionally a
+//! `contents/screenshot.jpg` preview.
+
 use eyre::Result;
 use log::info;
 use serde::Serialize;
@@ -36,6 +41,7 @@ struct KPluginMetadata<'a> {
     k_plugin: KPluginMetadataInner<'a>,
 }
 
+/// Generates KDE wallpaper `metadata.json` for a single [`crate::generate::Wallpaper`].
 #[derive(Copy, Clone, Debug)]
 pub struct KDEMetadataGenerator;
 

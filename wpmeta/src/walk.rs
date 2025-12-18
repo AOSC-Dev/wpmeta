@@ -61,7 +61,7 @@ impl MetadataWrapper {
             Some(p) => p
                 .authors()
                 .into_iter()
-                .chain(self.metadata.authors().iter())
+                .chain(self.metadata.authors.iter())
                 .collect(),
         }
     }

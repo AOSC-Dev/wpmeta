@@ -1,3 +1,8 @@
+//! Metadata generation for desktop environments.
+//!
+//! This module converts [`crate::input`] metadata into a normalized [`WallpaperCollection`] and
+//! writes desktop-environment specific manifests (GNOME/KDE) into a staging directory.
+
 mod gnome;
 mod kde;
 
@@ -22,6 +27,7 @@ use crate::walk::MetadataWrapper;
 pub use gnome::GNOMEMetadataGenerator;
 pub use kde::KDEMetadataGenerator;
 
+/// Ensure a directory exists, creating it if needed.
 pub fn ensure_dir(dir: &Path) -> Result<()> {
     if !dir.is_dir() {
         debug!("creating directory at {}", dir.display());
@@ -30,6 +36,7 @@ pub fn ensure_dir(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Ensure a file's parent directory exists.
 pub fn ensure_parent(file: &Path) -> Result<()> {
     if let Some(parent) = file.parent() {
         ensure_dir(parent)
@@ -38,6 +45,7 @@ pub fn ensure_parent(file: &Path) -> Result<()> {
     }
 }
 
+/// Write bytes to a file, creating parent directories as needed.
 pub fn write_file(target: &Path, content: &[u8]) -> Result<()> {
     ensure_parent(target)?;
     debug!("writing to {}", target.display());
@@ -51,6 +59,7 @@ pub fn write_file(target: &Path, content: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Generate a 500×500 JPEG preview from an image file.
 pub fn generate_preview(src: &Path, target: &Path) -> Result<()> {
     let img = ImageReader::open(src)?.decode()?;
     let img = img.resize(500, 500, FilterType::Lanczos3);
@@ -59,6 +68,7 @@ pub fn generate_preview(src: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Copy a file to `dst`, creating the destination parent directory as needed.
 pub fn copy_file(src: &Path, dst: &Path) -> Result<()> {
     if !src.is_file() {
         bail!("src {} is not a file", src.display());
@@ -73,11 +83,14 @@ pub fn copy_file(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A desktop-environment specific metadata generator.
 pub trait MetadataGenerator {
+    /// Returns the base installation directory for a wallpaper id.
     fn get_wallpaper_base(target_path: &Path, id: &str) -> PathBuf {
         target_path.join("usr/share/wallpapers").join(id)
     }
 
+    /// Generate and write metadata into `target_base` for a single wallpaper.
     fn generate_metadata(
         target_base: &Path,
         wallpaper: &Wallpaper,
@@ -85,43 +98,66 @@ pub trait MetadataGenerator {
     ) -> Result<()>;
 }
 
+/// Image size in pixels.
 #[derive(Copy, Clone, Debug)]
 pub struct Resolution {
+    /// Image width in pixels.
     pub width: usize,
+    /// Image height in pixels.
     pub height: usize,
 }
 
+/// Whether a wallpaper file is a normal or dark variant.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WallpaperKind {
+    /// Normal (light) variant.
     Normal,
+    /// Dark variant.
     Dark,
 }
 
+/// A discovered (and usually copied) wallpaper file with derived metadata.
 #[derive(Clone, Debug)]
 pub struct WallpaperFile {
+    /// File path in the staging directory.
     pub file_path: PathBuf,
+    /// Image resolution.
     pub resolution: Resolution,
+    /// Detected image format.
     pub format: ImageFormat,
+    /// Variant type (normal/dark).
     pub kind: WallpaperKind,
     // primary_color: HexColor,  // TODO: Add automatic primary/secondary color extraction
     // secondary_color: HexColor,
 }
 
+/// A normalized wallpaper ready for metadata generation.
 #[derive(Clone, Debug)]
 pub struct Wallpaper<'a> {
+    /// Wallpaper id.
     pub id: &'a str,
+    /// Canonicalized SPDX license expression when possible.
     pub license: Cow<'a, str>,
+    /// Authors applicable to this wallpaper.
     pub authors: Vec<&'a Author>,
+    /// Wallpaper title.
     pub title: &'a Localized<String>,
+    /// Available files (normal/dark and/or multiple resolutions).
     pub files: Vec<WallpaperFile>,
+    /// Primary background color.
     pub primary_color: HexColor,
+    /// Secondary background color.
     pub secondary_color: HexColor,
+    /// Background shading type.
     pub color_shading_type: ColorShadingType,
+    /// Desktop rendering option.
     pub options: PictureOptions,
 }
 
+/// A set of wallpapers built from a metadata tree.
 #[derive(Clone, Debug)]
 pub struct WallpaperCollection<'a> {
+    /// The normalized wallpapers.
     pub inner: Vec<Wallpaper<'a>>,
 }
 
@@ -149,6 +185,7 @@ impl FromStr for Resolution {
 }
 
 impl WallpaperKind {
+    /// Directory name used under `.../contents/` for this kind.
     pub const fn get_dir_name(&self) -> &str {
         match self {
             Self::Normal => "images",
@@ -158,6 +195,9 @@ impl WallpaperKind {
 }
 
 impl WallpaperFile {
+    /// Read image metadata from an existing file path.
+    ///
+    /// The file's kind is inferred from the filename suffix (`*dark.*` => [`WallpaperKind::Dark`]).
     pub fn from_file(source_path: &Path) -> Result<Self> {
         let path_canonicalized = source_path.canonicalize()?;
         let filename = path_canonicalized
@@ -217,6 +257,7 @@ impl WallpaperFile {
         })
     }
 
+    /// Generate a preview image for this wallpaper file.
     pub fn generate_preview(&self, output: &Path, resolution: Resolution) -> Result<()> {
         let img = ImageReader::open(&self.file_path)?.decode()?;
         let img = img.resize(
@@ -290,18 +331,25 @@ impl<'a> Wallpaper<'a> {
         self.get_wallpapers(|w| w.kind == WallpaperKind::Normal)
     }
 
+    /// Returns dark-variant wallpaper files.
     pub fn get_dark_wallpapers(&self) -> Vec<&WallpaperFile> {
         self.get_wallpapers(|w| w.kind == WallpaperKind::Dark)
     }
 
+    /// Returns `true` if any normal wallpaper file exists.
     pub fn has_normal_wallpaper(&self) -> bool {
         !self.get_normal_wallpapers().is_empty()
     }
 
+    /// Returns `true` if any dark wallpaper file exists.
     pub fn has_dark_wallpaper(&self) -> bool {
         !self.get_dark_wallpapers().is_empty()
     }
 
+    /// Generate a preview image for this wallpaper.
+    ///
+    /// Picks the largest available file from the normal variant if present, otherwise the dark
+    /// variant.
     pub fn generate_preview(&self, output: &Path, resolution: Resolution) -> Result<()> {
         if self.files.is_empty() {
             bail!("No wallpaper file definition found");
@@ -319,6 +367,8 @@ impl<'a> Wallpaper<'a> {
 }
 
 impl<'a> WallpaperCollection<'a> {
+    /// Build a [`WallpaperCollection`] from a parsed [`MetadataWrapper`], copying files into the
+    /// staging directory.
     pub fn new(value: &'a MetadataWrapper, base_directory: &Path) -> Result<Self> {
         let authors = value.authors();
         let wallpapers = value
@@ -332,6 +382,7 @@ impl<'a> WallpaperCollection<'a> {
 }
 
 #[cfg(test)]
+/// Shared helpers for unit tests in `crate::generate`.
 pub(crate) mod test {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -341,11 +392,13 @@ pub(crate) mod test {
 
     use super::{Resolution, WallpaperFile, WallpaperKind};
 
+    /// A best-effort temporary directory that is removed on drop.
     pub(crate) struct TempDir {
         path: PathBuf,
     }
 
     impl TempDir {
+        /// Create a new temp directory.
         pub(crate) fn new(prefix: &str) -> Self {
             let unique = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -371,18 +424,21 @@ pub(crate) mod test {
         }
     }
 
+    /// Build a localized string with a default and an `en-US` entry.
     pub(crate) fn localized_default_en_us(default: &str, en_us: &str) -> Localized<String> {
         let mut localized = Localized::new(Some(default.to_owned()));
         localized.insert(Locale::new("en-US"), en_us.to_owned());
         localized
     }
 
+    /// Build a localized string with a default and a `zh-CN` entry.
     pub(crate) fn localized_default_zh_cn(default: &str, zh_cn: &str) -> Localized<String> {
         let mut localized = Localized::new(Some(default.to_owned()));
         localized.insert(Locale::new("zh-CN"), zh_cn.to_owned());
         localized
     }
 
+    /// Construct a [`WallpaperFile`] for tests without reading an image from disk.
     pub(crate) fn wallpaper_file(
         path: PathBuf,
         kind: WallpaperKind,

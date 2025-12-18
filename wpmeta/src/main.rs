@@ -16,9 +16,10 @@ use generate::{
 };
 use walk::{DirectoryIter, MetadataWrapper};
 
+/// Argument parser
 #[derive(Clone, Debug, Parser)]
 #[command(author, version, about)]
-pub struct Args {
+struct Args {
     #[arg(short, long)]
     src: PathBuf,
     #[arg(short, long)]
