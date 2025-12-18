@@ -452,4 +452,48 @@ pub(crate) mod test {
             kind,
         }
     }
+
+    #[test]
+    fn test_wallpaper_file_from_file_reads_metadata() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/example.jpg");
+        let file = WallpaperFile::from_file(&source).unwrap();
+        assert_eq!(file.kind, super::WallpaperKind::Normal);
+        assert_eq!(file.format, image::ImageFormat::Jpeg);
+        assert_eq!(file.resolution.width, 7680);
+        assert_eq!(file.resolution.height, 4320);
+        assert_eq!(file.file_path, source.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_wallpaper_file_copy_file_copies_into_target_structure() {
+        let tmp = TempDir::new("wallpaper-file-copy");
+        let target_wallpaper_root = tmp.path().join("usr/share/wallpapers/Kusa");
+
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/example.jpg");
+        let original = WallpaperFile::from_file(&source).unwrap();
+        let copied = original.copy_file(&target_wallpaper_root).unwrap();
+
+        assert_eq!(copied.kind, super::WallpaperKind::Normal);
+        assert_eq!(copied.format, image::ImageFormat::Jpeg);
+        assert_eq!(copied.resolution.width, original.resolution.width);
+        assert_eq!(copied.resolution.height, original.resolution.height);
+
+        let expected_filename = format!(
+            "{}x{}.{}",
+            copied.resolution.width,
+            copied.resolution.height,
+            copied.format.extensions_str()[0]
+        );
+        let expected_path = target_wallpaper_root
+            .join("contents")
+            .join("images")
+            .join(expected_filename)
+            .canonicalize()
+            .unwrap();
+        assert_eq!(copied.file_path, expected_path);
+
+        let src_bytes = std::fs::read(source).unwrap();
+        let dst_bytes = std::fs::read(&copied.file_path).unwrap();
+        assert_eq!(dst_bytes, src_bytes);
+    }
 }
