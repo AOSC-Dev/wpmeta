@@ -107,7 +107,7 @@ impl Metadata {
 pub mod test {
     use super::Metadata;
 
-    pub static DUMMY_META: &str = r#"
+    pub static DUMMY_META_SINGLE_FILE: &str = r#"
     [[authors]]
     email = "yajuu.senpai@example.com"
     name.default = "Yajuu Senpai"
@@ -121,9 +121,26 @@ pub mod test {
     path = "test/example.jpg"
     "#;
 
+    pub static DUMMY_META_MULTIPLE_FILE: &str = r#"
+    [[authors]]
+    email = "yajuu.senpai@example.com"
+    name.default = "Yajuu Senpai"
+    name.zh-CN = "野兽先辈"
+
+    [[wallpapers]]
+    title.default = "Kusa"
+    title.en-US = "Grass"
+    license = "CC BY-SA 4.0"
+    id = "Kusa"
+    path = [
+        "test/example.jpg",
+        "test/example-dark.jpg"
+    ]
+    "#;
+
     #[test]
     fn test_de() {
-        let dummy_meta = toml::from_str::<Metadata>(DUMMY_META).unwrap();
+        let dummy_meta = toml::from_str::<Metadata>(DUMMY_META_SINGLE_FILE).unwrap();
         assert_eq!(dummy_meta.authors().len(), 1);
         assert_eq!(dummy_meta.wallpapers().len(), 1);
     }

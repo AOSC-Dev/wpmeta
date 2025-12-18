@@ -22,7 +22,7 @@ static GNOME_WP_LIST_TEMPLATE_STR: &str = r#"<?xml version="1.0" encoding="UTF-8
     <name>{ default_name }</name>{{ endif }}{{ for name in names }}
     <name xml:lang="{ name.locale }">{ name.name }</name>{{ endfor }}{{ if filename }}
     <filename>/{ filename }</filename>{{ endif }}{{ if filename_dark }}
-    <filename-dark>/{ filename }</filename-dark>{{ endif }}
+    <filename-dark>/{ filename_dark }</filename-dark>{{ endif }}
     <options>{ options }</options>
     <shade_type>{ shade_type }</shade_type>
     <pcolor>{ pcolor }</pcolor>
@@ -35,7 +35,7 @@ static GNOME_BACKGROUND_TEMPLATE_STR: &str = r#"<background>
     <static>
         <duration>8640000.0</duration>
         <file>{{ for file in files }}
-            <size width="{ file.width }" height="{ file.height }">{ file.path }</size>{{endfor}}
+            <size width="{ file.width }" height="{ file.height }">/{ file.path }</size>{{endfor}}
         </file>
     </static>
 </background>"#;
@@ -75,7 +75,7 @@ struct GNOMEWallpaperMeta<'a> {
 struct GNOMEWallpaperFile<'a> {
     width: usize,
     height: usize,
-    file: &'a Path,
+    path: &'a Path,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -127,7 +127,7 @@ impl<'a> GNOMEWallpaperFile<'a> {
         Self {
             width: value.resolution.width,
             height: value.resolution.height,
-            file: value
+            path: value
                 .file_path
                 .strip_prefix(base_dir)
                 .expect("Failed to get relative path"),
@@ -188,7 +188,12 @@ impl MetadataGenerator for GNOMEMetadataGenerator {
                 );
                 let wp_list = wallpaper_base.join("images/gnome-list.xml");
                 Self::write_wp_list(&wp_list, target_base, normal_wallpapers)?;
-                Some(wp_list)
+                Some(
+                    wp_list
+                        .strip_prefix(target_base)
+                        .expect("Failed to strip prefix")
+                        .to_owned(),
+                )
             }
         };
 
@@ -207,9 +212,14 @@ impl MetadataGenerator for GNOMEMetadataGenerator {
                     "{}: Found multiple dark wallpapers, generating wallpaper list with {} versions...",
                     id, l
                 );
-                let wp_list = wallpaper_base.join("images-dark/gnome-list.xml");
+                let wp_list = wallpaper_base.join("images_dark/gnome-list.xml");
                 Self::write_wp_list(&wp_list, target_base, dark_wallpapers)?;
-                Some(wp_list)
+                Some(
+                    wp_list
+                        .strip_prefix(target_base)
+                        .expect("Failed to strip prefix")
+                        .to_owned(),
+                )
             }
         };
 
@@ -227,32 +237,129 @@ impl MetadataGenerator for GNOMEMetadataGenerator {
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use std::path::PathBuf;
-//
-//     use super::render_gnome;
-//     use crate::input::Metadata;
-//
-//     #[test]
-//     fn test_render() {
-//         let dummy_meta = toml::from_str::<Metadata>(crate::input::test::DUMMY_META).unwrap();
-//         let result = render_gnome(&dummy_meta, &PathBuf::from(".")).unwrap();
-//         assert_eq!(
-//             result.get("Kusa").unwrap(),
-//             r#"<?xml version="1.0" encoding="UTF-8"?>
-// <!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
-// <wallpapers>
-//     <wallpaper deleted="false">
-//     <name>Kusa</name>
-//     <name xml:lang="en-US">Grass</name>
-//     <filename>/usr/share/wallpapers/Kusa/contents/images/7680x4320.jpg</filename>
-//     <options>wallpaper</options>
-//     <shade_type>solid</shade_type>
-//     <pcolor>#023C88</pcolor>
-//     <scolor>#5789CA</scolor>
-//     </wallpaper>
-// </wallpapers>"#
-//         );
-//     }
-// }
+#[cfg(test)]
+mod test {
+    use std::borrow::Cow;
+    use std::fs;
+
+    use localized::Localized;
+
+    use super::GNOMEMetadataGenerator;
+    use crate::generate::test::{TempDir, localized_default_en_us, wallpaper_file};
+    use crate::generate::{ColorShadingType, MetadataGenerator, PictureOptions, Resolution};
+    use crate::generate::{Wallpaper, WallpaperKind};
+
+    #[test]
+    fn test_manifest_includes_normal_and_dark_filenames() {
+        let tmp = TempDir::new("gnome-manifest-normal-dark");
+        let target_base = tmp.path();
+
+        let title: Localized<String> = localized_default_en_us("Kusa", "Grass");
+        let normal_path = target_base.join("usr/share/wallpapers/Kusa/contents/images/7680x4320.jpg");
+        let dark_path =
+            target_base.join("usr/share/wallpapers/Kusa/contents/images_dark/7680x4320-dark.jpg");
+        let wallpaper = Wallpaper {
+            id: "Kusa",
+            license: Cow::Borrowed("CC BY-SA 4.0"),
+            authors: vec![],
+            title: &title,
+            files: vec![
+                wallpaper_file(normal_path, WallpaperKind::Normal, 7680, 4320),
+                wallpaper_file(dark_path, WallpaperKind::Dark, 7680, 4320),
+            ],
+            primary_color: hex_color::HexColor::rgb(2, 60, 136),
+            secondary_color: hex_color::HexColor::rgb(87, 137, 202),
+            color_shading_type: ColorShadingType::Solid,
+            options: PictureOptions::Wallpaper,
+        };
+
+        GNOMEMetadataGenerator::generate_metadata(
+            target_base,
+            &wallpaper,
+            Resolution { width: 500, height: 500 },
+        )
+        .unwrap();
+
+        let manifest_path =
+            target_base.join("usr/share/gnome-background-properties/Kusa.xml");
+        let manifest = fs::read_to_string(&manifest_path).unwrap();
+        let expected = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
+<wallpapers>
+    <wallpaper deleted="false">
+    <name>Kusa</name>
+    <name xml:lang="en-US">Grass</name>
+    <filename>/usr/share/wallpapers/Kusa/contents/images/7680x4320.jpg</filename>
+    <filename-dark>/usr/share/wallpapers/Kusa/contents/images_dark/7680x4320-dark.jpg</filename-dark>
+    <options>wallpaper</options>
+    <shade_type>solid</shade_type>
+    <pcolor>#023C88</pcolor>
+    <scolor>#5789CA</scolor>
+    </wallpaper>
+</wallpapers>"#;
+        assert_eq!(manifest, expected);
+    }
+
+    #[test]
+    fn test_generates_wallpaper_list_for_multiple_normals() {
+        let tmp = TempDir::new("gnome-manifest-multiple-normals");
+        let target_base = tmp.path();
+
+        let title: Localized<String> = localized_default_en_us("Kusa", "Grass");
+        let wp1 = target_base.join("usr/share/wallpapers/Kusa/contents/images/1920x1080.jpg");
+        let wp2 = target_base.join("usr/share/wallpapers/Kusa/contents/images/3840x2160.jpg");
+        let wallpaper = Wallpaper {
+            id: "Kusa",
+            license: Cow::Borrowed("CC BY-SA 4.0"),
+            authors: vec![],
+            title: &title,
+            files: vec![
+                wallpaper_file(wp1, WallpaperKind::Normal, 1920, 1080),
+                wallpaper_file(wp2, WallpaperKind::Normal, 3840, 2160),
+            ],
+            primary_color: hex_color::HexColor::rgb(2, 60, 136),
+            secondary_color: hex_color::HexColor::rgb(87, 137, 202),
+            color_shading_type: ColorShadingType::Solid,
+            options: PictureOptions::Wallpaper,
+        };
+
+        GNOMEMetadataGenerator::generate_metadata(
+            target_base,
+            &wallpaper,
+            Resolution { width: 500, height: 500 },
+        )
+        .unwrap();
+
+        let list_path =
+            target_base.join("usr/share/wallpapers/Kusa/contents/images/gnome-list.xml");
+        let list_xml = fs::read_to_string(&list_path).unwrap();
+        let expected_list = r#"<background>
+    <static>
+        <duration>8640000.0</duration>
+        <file>
+            <size width="1920" height="1080">/usr/share/wallpapers/Kusa/contents/images/1920x1080.jpg</size>
+            <size width="3840" height="2160">/usr/share/wallpapers/Kusa/contents/images/3840x2160.jpg</size>
+        </file>
+    </static>
+</background>"#;
+        assert_eq!(list_xml, expected_list);
+
+        let manifest_path =
+            target_base.join("usr/share/gnome-background-properties/Kusa.xml");
+        let manifest = fs::read_to_string(&manifest_path).unwrap();
+        let expected_manifest = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
+<wallpapers>
+    <wallpaper deleted="false">
+    <name>Kusa</name>
+    <name xml:lang="en-US">Grass</name>
+    <filename>/usr/share/wallpapers/Kusa/contents/images/gnome-list.xml</filename>
+    <options>wallpaper</options>
+    <shade_type>solid</shade_type>
+    <pcolor>#023C88</pcolor>
+    <scolor>#5789CA</scolor>
+    </wallpaper>
+</wallpapers>"#;
+        assert_eq!(manifest, expected_manifest);
+    }
+}

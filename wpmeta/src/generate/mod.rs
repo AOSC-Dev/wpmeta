@@ -330,3 +330,70 @@ impl<'a> WallpaperCollection<'a> {
         Ok(Self { inner: wallpapers })
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test {
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use image::ImageFormat;
+    use localized::{Locale, Localized};
+
+    use super::{Resolution, WallpaperFile, WallpaperKind};
+
+    pub(crate) struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        pub(crate) fn new(prefix: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "wpmeta-test-{}-{}-{unique}",
+                std::process::id(),
+                prefix
+            ));
+            std::fs::create_dir_all(&path).expect("Failed to create temp dir");
+            Self { path }
+        }
+
+        pub(crate) fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    pub(crate) fn localized_default_en_us(default: &str, en_us: &str) -> Localized<String> {
+        let mut localized = Localized::new(Some(default.to_owned()));
+        localized.insert(Locale::new("en-US"), en_us.to_owned());
+        localized
+    }
+
+    pub(crate) fn localized_default_zh_cn(default: &str, zh_cn: &str) -> Localized<String> {
+        let mut localized = Localized::new(Some(default.to_owned()));
+        localized.insert(Locale::new("zh-CN"), zh_cn.to_owned());
+        localized
+    }
+
+    pub(crate) fn wallpaper_file(
+        path: PathBuf,
+        kind: WallpaperKind,
+        width: usize,
+        height: usize,
+    ) -> WallpaperFile {
+        WallpaperFile {
+            file_path: path,
+            resolution: Resolution { width, height },
+            format: ImageFormat::Jpeg,
+            kind,
+        }
+    }
+}

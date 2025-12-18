@@ -133,31 +133,74 @@ impl MetadataGenerator for KDEMetadataGenerator {
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::{MetadataGenerator, KDEMetadataGenerator};
-//     use crate::input::Metadata;
-//
-//     #[test]
-//     fn test_render() {
-//         let result = render_kde(&dummy_meta).unwrap();
-//         assert_eq!(
-//             result.get("Kusa").unwrap(),
-//             r#"{
-//   "KPlugin": {
-//     "Authors": [
-//       {
-//         "Email": "yajuu.senpai@example.com",
-//         "Name": "Yajuu Senpai",
-//         "Name[zh_CN]": "野兽先辈"
-//       }
-//     ],
-//     "Id": "Kusa",
-//     "License": "CC BY-SA 4.0",
-//     "Name": "Kusa",
-//     "Name[en_US]": "Grass"
-//   }
-// }"#
-//         );
-//     }
-// }
+#[cfg(test)]
+mod test {
+    use std::borrow::Cow;
+    use std::fs;
+
+    use localized::Localized;
+
+    use super::KDEMetadataGenerator;
+    use crate::generate::test::{TempDir, localized_default_en_us, localized_default_zh_cn, wallpaper_file};
+    use crate::generate::{MetadataGenerator, Resolution};
+    use crate::generate::{Wallpaper, WallpaperKind};
+    use crate::input::Author;
+
+    #[test]
+    fn test_writes_kde_metadata_json() {
+        let tmp = TempDir::new("kde-metadata-json");
+        let target_base = tmp.path();
+
+        let author = Author {
+            email: "yajuu.senpai@example.com".to_owned(),
+            name: localized_default_zh_cn("Yajuu Senpai", "野兽先辈"),
+        };
+        let title: Localized<String> = localized_default_en_us("Kusa", "Grass");
+
+        let normal_path =
+            target_base.join("usr/share/wallpapers/Kusa/contents/images/7680x4320.jpg");
+        let dark_path =
+            target_base.join("usr/share/wallpapers/Kusa/contents/images_dark/7680x4320-dark.jpg");
+
+        let wallpaper = Wallpaper {
+            id: "Kusa",
+            license: Cow::Borrowed("CC BY-SA 4.0"),
+            authors: vec![&author],
+            title: &title,
+            files: vec![
+                wallpaper_file(normal_path, WallpaperKind::Normal, 1, 1),
+                wallpaper_file(dark_path, WallpaperKind::Dark, 1, 1),
+            ],
+            primary_color: hex_color::HexColor::rgb(2, 60, 136),
+            secondary_color: hex_color::HexColor::rgb(87, 137, 202),
+            color_shading_type: crate::input::ColorShadingType::Solid,
+            options: crate::input::PictureOptions::Wallpaper,
+        };
+
+        KDEMetadataGenerator::generate_metadata(
+            target_base,
+            &wallpaper,
+            Resolution { width: 500, height: 500 },
+        )
+        .unwrap();
+
+        let manifest_path = target_base.join("usr/share/wallpapers/Kusa/metadata.json");
+        let content = fs::read_to_string(&manifest_path).unwrap();
+        let expected = r#"{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Email": "yajuu.senpai@example.com",
+        "Name": "Yajuu Senpai",
+        "Name[zh_CN]": "野兽先辈"
+      }
+    ],
+    "Id": "Kusa",
+    "License": "CC BY-SA 4.0",
+    "Name": "Kusa",
+    "Name[en_US]": "Grass"
+  }
+}"#;
+        assert_eq!(content, expected);
+    }
+}
