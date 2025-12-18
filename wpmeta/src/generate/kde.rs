@@ -1,21 +1,20 @@
-use eyre::{eyre, Result};
-use serde::ser::{SerializeMap, Serializer};
+use eyre::Result;
+use log::info;
 use serde::Serialize;
+use serde::ser::{SerializeMap, Serializer};
 
-use std::collections::HashMap;
-
+use super::{Author, MetadataGenerator, Resolution, Wallpaper, write_file};
 use localized::Localized;
-
-use crate::meta::{Author, Metadata};
+use std::path::Path;
 
 #[derive(Clone, Debug)]
-pub struct KPluginName<'a> {
+struct KPluginName<'a> {
     inner: &'a Localized<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct KPluginAuthor<'a> {
+struct KPluginAuthor<'a> {
     email: &'a str,
     #[serde(flatten)]
     name: KPluginName<'a>,
@@ -23,7 +22,7 @@ pub struct KPluginAuthor<'a> {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct KPluginMetadataInner<'a> {
+struct KPluginMetadataInner<'a> {
     authors: Vec<KPluginAuthor<'a>>,
     id: &'a str,
     license: &'a str,
@@ -33,9 +32,12 @@ pub struct KPluginMetadataInner<'a> {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct KPluginMetadata<'a> {
+struct KPluginMetadata<'a> {
     k_plugin: KPluginMetadataInner<'a>,
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct KDEMetadataGenerator;
 
 impl<'a> Serialize for KPluginName<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -72,7 +74,12 @@ impl<'a> From<&'a Author> for KPluginAuthor<'a> {
 }
 
 impl<'a> KPluginMetadataInner<'a> {
-    pub fn new(authors: Vec<KPluginAuthor<'a>>, id: &'a str, license: &'a str, name: KPluginName<'a>) -> Self {
+    pub fn new(
+        authors: Vec<KPluginAuthor<'a>>,
+        id: &'a str,
+        license: &'a str,
+        name: KPluginName<'a>,
+    ) -> Self {
         Self {
             authors,
             id,
@@ -83,66 +90,74 @@ impl<'a> KPluginMetadataInner<'a> {
 }
 
 impl<'a> KPluginMetadata<'a> {
-    pub fn from_metadata(src: &'a Metadata) -> Result<HashMap<&'a str, Self>> {
-        let authors = match src.authors() {
-            Some(authors) => authors.iter().map(KPluginAuthor::from).collect(),
-            None => Vec::new(),
-        };
-        let wallpapers = src
-            .wallpapers()
-            .ok_or_else(|| eyre!("Failed to get wallpaper list"))?;
-        Ok(wallpapers
+    pub fn new(src: &'a Wallpaper<'a>) -> Result<Self> {
+        let authors = src
+            .authors
             .iter()
-            .map(|w| {
-                (
-                    w.id(),
-                    Self {
-                        k_plugin: KPluginMetadataInner::new(authors.clone(), w.id(), w.license(), w.titles().into())
-                    },
-                )
-            })
-            .collect())
-    }
-}
-
-pub fn render_kde(metadata: &Metadata) -> Result<HashMap<&str, String>> {
-    Ok(KPluginMetadata::from_metadata(metadata)?
-        .into_iter()
-        .map(|(k, v)| {
-            (
-                k,
-                serde_json::to_string_pretty(&v).expect("Unable to serialize KPlugin Metadata"),
-            )
+            .map(|a| KPluginAuthor::from(*a))
+            .collect();
+        Ok(Self {
+            k_plugin: KPluginMetadataInner::new(
+                authors,
+                src.id,
+                src.license.as_ref(),
+                src.title.into(),
+            ),
         })
-        .collect())
-}
-
-#[cfg(test)]
-mod test {
-    use super::render_kde;
-    use crate::meta::Metadata;
-
-    #[test]
-    fn test_render() {
-        let dummy_meta = toml::from_str::<Metadata>(crate::meta::test::DUMMY_META).unwrap();
-        let result = render_kde(&dummy_meta).unwrap();
-        assert_eq!(
-            result.get("Kusa").unwrap(),
-            r#"{
-  "KPlugin": {
-    "Authors": [
-      {
-        "Email": "yajuu.senpai@example.com",
-        "Name": "Yajuu Senpai",
-        "Name[zh_CN]": "野兽先辈"
-      }
-    ],
-    "Id": "Kusa",
-    "License": "CC BY-SA 4.0",
-    "Name": "Kusa",
-    "Name[en_US]": "Grass"
-  }
-}"#
-        );
     }
 }
+
+impl MetadataGenerator for KDEMetadataGenerator {
+    fn generate_metadata(
+        target_base: &Path,
+        wallpaper: &Wallpaper,
+        preview_resolution: Resolution,
+    ) -> Result<()> {
+        let id = wallpaper.id;
+        let target_path = Self::get_wallpaper_base(target_base, id);
+        let manifest_path = target_path.join("metadata.json");
+        info!("{}: Generating manifest for KDE...", id);
+        let metadata = serde_json::to_string_pretty(&KPluginMetadata::new(wallpaper)?)?;
+        write_file(&manifest_path, metadata.as_bytes())?;
+        if wallpaper.has_normal_wallpaper() && wallpaper.has_dark_wallpaper() {
+            info!(
+                "{}: Skipped generating preview - found both normal and dark wallpapers",
+                id
+            );
+        } else {
+            info!("{}: Generating preview ...", id);
+            let preview_path = target_path.join("contents/screenshot.jpg");
+            wallpaper.generate_preview(&preview_path, preview_resolution)?;
+        }
+        Ok(())
+    }
+}
+
+// #[cfg(test)]
+// mod test {
+//     use super::{MetadataGenerator, KDEMetadataGenerator};
+//     use crate::input::Metadata;
+//
+//     #[test]
+//     fn test_render() {
+//         let result = render_kde(&dummy_meta).unwrap();
+//         assert_eq!(
+//             result.get("Kusa").unwrap(),
+//             r#"{
+//   "KPlugin": {
+//     "Authors": [
+//       {
+//         "Email": "yajuu.senpai@example.com",
+//         "Name": "Yajuu Senpai",
+//         "Name[zh_CN]": "野兽先辈"
+//       }
+//     ],
+//     "Id": "Kusa",
+//     "License": "CC BY-SA 4.0",
+//     "Name": "Kusa",
+//     "Name[en_US]": "Grass"
+//   }
+// }"#
+//         );
+//     }
+// }

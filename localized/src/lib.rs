@@ -69,7 +69,7 @@ impl Locale {
     /// Get concatenated locale name
     pub fn get_locale<S>(&self, delimiter: S) -> String
     where
-        S: AsRef<str>
+        S: AsRef<str>,
     {
         match &self.region {
             None => self.lang.to_owned(),
@@ -182,7 +182,7 @@ impl<T: Eq> Eq for Localized<T> {}
 #[cfg(test)]
 mod test {
     use super::{Locale, Localized};
-    use serde_test::{assert_tokens, Token};
+    use serde_test::{Token, assert_tokens};
     use std::collections::BTreeMap;
 
     #[test]
