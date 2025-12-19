@@ -287,9 +287,10 @@ impl<'a> Wallpaper<'a> {
     ) -> Result<Self> {
         let license = match Expression::canonicalize(wp.license.as_str()) {
             Ok(Some(res)) => Cow::Owned(res),
+            Ok(None) => Cow::Borrowed(wp.license.as_str()),
             _ => {
                 warn!(
-                    "{}: {} is not a valid SPDX license identifier",
+                    "{}: \"{}\" is not a valid SPDX license expression",
                     wp.id.as_str(),
                     wp.license.as_str()
                 );
