@@ -37,7 +37,7 @@ impl MetadataWrapper {
 
         if (!metadata.wallpapers.is_empty())
             && (metadata.authors.is_empty())
-            && !parent
+            && parent
                 .as_ref()
                 .map(|p| p.authors().is_empty())
                 .unwrap_or(true)
@@ -116,6 +116,12 @@ impl Iterator for DirectoryIter {
 
             // Parse metadata
             let parent = dir.parent().and_then(|p| self.parents.get(p).cloned());
+            debug!(
+                "{}: parent_path: {:?}, Parent-level manifest: {:?}",
+                metadata_path.display(),
+                dir.parent(),
+                parent
+            );
             let metadata =
                 MetadataWrapper::new(&metadata_path, parent).expect("Failed to parse metadata");
             assert_eq!(dir, metadata.path);
