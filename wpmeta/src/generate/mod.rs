@@ -7,23 +7,26 @@ mod gnome;
 mod kde;
 
 use eyre::{Result, bail, eyre};
-use hex_color::HexColor;
+use hex_color::{Display, HexColor};
 use image::{ImageFormat, ImageReader};
 use localized::Localized;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use spdx::Expression;
 
+use crate::input::Wallpaper as InputWallpaper;
+pub use crate::input::{Author, ColorShadingType, PictureOptions};
+use crate::walk::MetadataWrapper;
+use colored::Colorize;
 use image::imageops::FilterType;
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::{File, copy, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use crate::input::Wallpaper as InputWallpaper;
-pub use crate::input::{Author, ColorShadingType, PictureOptions};
-use crate::walk::MetadataWrapper;
-
+use crate::palette::extract_colors;
 pub use gnome::GNOMEMetadataGenerator;
 pub use kde::KDEMetadataGenerator;
 
@@ -108,7 +111,7 @@ pub struct Resolution {
 }
 
 /// Whether a wallpaper file is a normal or dark variant.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum WallpaperKind {
     /// Normal (light) variant.
     Normal,
@@ -127,8 +130,6 @@ pub struct WallpaperFile {
     pub format: ImageFormat,
     /// Variant type (normal/dark).
     pub kind: WallpaperKind,
-    // primary_color: HexColor,  // TODO: Add automatic primary/secondary color extraction
-    // secondary_color: HexColor,
 }
 
 /// A normalized wallpaper ready for metadata generation.
@@ -144,14 +145,14 @@ pub struct Wallpaper<'a> {
     pub title: &'a Localized<String>,
     /// Available files (normal/dark and/or multiple resolutions).
     pub files: Vec<WallpaperFile>,
-    /// Primary background color.
-    pub primary_color: HexColor,
-    /// Secondary background color.
-    pub secondary_color: HexColor,
     /// Background shading type.
     pub color_shading_type: ColorShadingType,
     /// Desktop rendering option.
     pub options: PictureOptions,
+    /// Color overrides
+    colors_overrides: HashMap<WallpaperKind, (Option<HexColor>, Option<HexColor>)>,
+    /// Colors
+    colors: RefCell<HashMap<WallpaperKind, Option<(HexColor, HexColor)>>>,
 }
 
 /// A set of wallpapers built from a metadata tree.
@@ -209,7 +210,7 @@ impl WallpaperFile {
                 )
             })?
             .to_string_lossy();
-        let kind = if filename.to_ascii_lowercase().ends_with("dark") {
+        let kind = if filename.to_ascii_lowercase().ends_with("_dark") {
             WallpaperKind::Dark
         } else {
             WallpaperKind::Normal
@@ -269,6 +270,12 @@ impl WallpaperFile {
         img.save_with_format(output, ImageFormat::Jpeg)?;
         Ok(())
     }
+
+    /// Extract a primary color and an accent color from the wallpaper file.
+    pub fn extract_colors(&self) -> Result<(HexColor, HexColor)> {
+        let img = ImageReader::open(&self.file_path)?.decode()?;
+        extract_colors(&img)
+    }
 }
 
 impl<'a> Wallpaper<'a> {
@@ -313,10 +320,13 @@ impl<'a> Wallpaper<'a> {
             title: &wp.title,
             authors: authors.to_owned(),
             files,
-            primary_color: wp.primary_color,
-            secondary_color: wp.secondary_color,
             color_shading_type: wp.shade_type,
             options: wp.option,
+            colors_overrides: HashMap::from([
+                (WallpaperKind::Normal, (wp.primary_color, wp.accent_color)),
+                (WallpaperKind::Dark, (None, wp.dark_accent_color)),
+            ]),
+            colors: RefCell::new(HashMap::new()),
         })
     }
 
@@ -346,23 +356,72 @@ impl<'a> Wallpaper<'a> {
         !self.get_dark_wallpapers().is_empty()
     }
 
+    pub fn get_clearest_file<F>(&self, predicate: F) -> Result<&WallpaperFile>
+    where
+        F: Fn(&WallpaperFile) -> bool,
+    {
+        if self.files.is_empty() {
+            bail!("No wallpaper file definition found");
+        }
+        Ok(self
+            .get_wallpapers(predicate)
+            .iter()
+            .max_by_key(|w| w.resolution.width * w.resolution.height)
+            .ok_or(eyre!("No matching wallpaper file found"))?)
+    }
+
     /// Generate a preview image for this wallpaper.
     ///
     /// Picks the largest available file from the normal variant if present, otherwise the dark
     /// variant.
     pub fn generate_preview(&self, output: &Path, resolution: Resolution) -> Result<()> {
-        if self.files.is_empty() {
-            bail!("No wallpaper file definition found");
-        }
-        if self.has_normal_wallpaper() {
-            self.get_normal_wallpapers()
-        } else {
-            self.get_dark_wallpapers()
-        }
-        .iter()
-        .max_by_key(|w| w.resolution.width * w.resolution.height)
-        .unwrap()
+        let has_normal_wallpaper = self.has_normal_wallpaper();
+        self.get_clearest_file(|w| {
+            if has_normal_wallpaper {
+                w.kind == WallpaperKind::Normal
+            } else {
+                w.kind == WallpaperKind::Dark
+            }
+        })?
         .generate_preview(output, resolution)
+    }
+
+    /// Get primary color and an accent color of the normal variant.
+    pub fn get_colors(&self, kind: WallpaperKind) -> Result<Option<(HexColor, HexColor)>> {
+        if self.colors.borrow().contains_key(&kind) {
+            return Ok(*self.colors.borrow().get(&kind).unwrap());
+        }
+        let (primary_override, accent_override) =
+            unsafe { self.colors_overrides.get(&kind).unwrap_unchecked() };
+        let results = if primary_override.is_some() && accent_override.is_some() {
+            (primary_override.unwrap(), accent_override.unwrap())
+        } else {
+            let file = self.get_clearest_file(|w| w.kind == kind);
+            if file.is_err() {
+                debug!("{}: No {:?} wallpaper defined, skipping...", self.id, kind);
+                self.colors.borrow_mut().insert(kind, None);
+                return Ok(None);
+            }
+            let file = unsafe { file.unwrap_unchecked() };
+            let (primary, accent) = file.extract_colors()?;
+            info!(
+                "{}: Extracted colors {} {} from {}",
+                self.id,
+                Display::new(primary)
+                    .to_string()
+                    .on_truecolor(primary.r, primary.g, primary.b),
+                Display::new(accent)
+                    .to_string()
+                    .on_truecolor(accent.r, accent.g, accent.b),
+                file.file_path.display()
+            );
+            (
+                primary_override.unwrap_or(primary),
+                accent_override.unwrap_or(accent),
+            )
+        };
+        self.colors.borrow_mut().insert(kind, Some(results));
+        Ok(Some(results))
     }
 }
 
@@ -457,8 +516,8 @@ pub(crate) mod test {
     fn test_wallpaper_file_from_file_reads_metadata() {
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/example.jpg");
         let file = WallpaperFile::from_file(&source).unwrap();
-        assert_eq!(file.kind, super::WallpaperKind::Normal);
-        assert_eq!(file.format, image::ImageFormat::Jpeg);
+        assert_eq!(file.kind, WallpaperKind::Normal);
+        assert_eq!(file.format, ImageFormat::Jpeg);
         assert_eq!(file.resolution.width, 7680);
         assert_eq!(file.resolution.height, 4320);
         assert_eq!(file.file_path, source.canonicalize().unwrap());
@@ -473,8 +532,8 @@ pub(crate) mod test {
         let original = WallpaperFile::from_file(&source).unwrap();
         let copied = original.copy_file(&target_wallpaper_root).unwrap();
 
-        assert_eq!(copied.kind, super::WallpaperKind::Normal);
-        assert_eq!(copied.format, image::ImageFormat::Jpeg);
+        assert_eq!(copied.kind, WallpaperKind::Normal);
+        assert_eq!(copied.format, ImageFormat::Jpeg);
         assert_eq!(copied.resolution.width, original.resolution.width);
         assert_eq!(copied.resolution.height, original.resolution.height);
 

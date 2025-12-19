@@ -90,12 +90,12 @@ pub struct Wallpaper {
     /// Background color shading type.
     #[serde(default)]
     pub shade_type: ColorShadingType,
-    /// Primary background color (defaults to a project-wide value).
-    #[serde(default = "default_primary_color")]
-    pub primary_color: HexColor,
-    /// Secondary background color (defaults to a project-wide value).
-    #[serde(default = "default_secondary_color")]
-    pub secondary_color: HexColor,
+    /// Primary background color.
+    pub primary_color: Option<HexColor>,
+    /// Accent color override.
+    pub accent_color: Option<HexColor>,
+    /// Dark accent color override.
+    pub dark_accent_color: Option<HexColor>,
 }
 
 /// The top-level metadata document read from a `metadata.toml`.
@@ -107,14 +107,6 @@ pub struct Metadata {
     /// Wallpaper entries defined in this directory.
     #[serde(default)]
     pub wallpapers: Vec<Wallpaper>,
-}
-
-fn default_primary_color() -> HexColor {
-    HexColor::rgb(2, 60, 136)
-}
-
-fn default_secondary_color() -> HexColor {
-    HexColor::rgb(87, 137, 202)
 }
 
 impl Author {

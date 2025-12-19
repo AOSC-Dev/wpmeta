@@ -16,7 +16,7 @@ use std::path::Path;
 
 use super::{
     ColorShadingType, MetadataGenerator, PictureOptions, Resolution, Wallpaper, WallpaperFile,
-    write_file,
+    WallpaperKind, write_file,
 };
 
 /// Name of the gnome-wp-list template.
@@ -94,12 +94,12 @@ struct GNOMEWallpaperList<'a> {
     files: Vec<GNOMEWallpaperFile<'a>>,
 }
 
-/// Generates GNOME wallpaper manifests for a single [`crate::generate::Wallpaper`].
+/// Generates GNOME wallpaper manifests for a single [`Wallpaper`].
 #[derive(Copy, Clone, Debug)]
 pub struct GNOMEMetadataGenerator;
 
 impl<'a> Name<'a> {
-    /// Generate a vector of names from a [`localized::Localized<String>`].
+    /// Generate a vector of names from a [`Localized<String>`].
     pub fn flatten<F>(src: &'a Localized<String>, transform: F) -> Result<Vec<Self>>
     where
         F: Fn(&Locale) -> String,
@@ -122,6 +122,10 @@ impl<'a> GNOMEWallpaperMeta<'a> {
         let default_name = titles.get_default();
         // xml:lang tags uses "-" as the delimiter
         let names = Name::flatten(titles, |l| l.get_locale("-"))?;
+        let (primary_color, accent_color) = wallpaper
+            .get_colors(WallpaperKind::Normal)?
+            .expect("No color definition found");
+        info!("{}: Generating manifest for GNOME...", wallpaper.id);
         Ok(Self {
             default_name,
             names,
@@ -129,8 +133,8 @@ impl<'a> GNOMEWallpaperMeta<'a> {
             filename_dark: file_dark,
             options: wallpaper.options,
             shade_type: wallpaper.color_shading_type,
-            pcolor: wallpaper.primary_color,
-            scolor: wallpaper.secondary_color,
+            pcolor: primary_color,
+            scolor: accent_color,
         })
     }
 }
@@ -253,7 +257,11 @@ impl MetadataGenerator for GNOMEMetadataGenerator {
 
 #[cfg(test)]
 mod test {
+    use hex_color::HexColor;
+
     use std::borrow::Cow;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::fs;
 
     use localized::Localized;
@@ -263,13 +271,27 @@ mod test {
     use crate::generate::{ColorShadingType, MetadataGenerator, PictureOptions, Resolution};
     use crate::generate::{Wallpaper, WallpaperKind};
 
+    fn get_color_overrides() -> HashMap<WallpaperKind, (Option<HexColor>, Option<HexColor>)> {
+        HashMap::from([
+            (
+                WallpaperKind::Normal,
+                (
+                    Some(HexColor::rgb(2, 60, 136)),
+                    Some(HexColor::rgb(87, 137, 202)),
+                ),
+            ),
+            (WallpaperKind::Dark, (None, None)),
+        ])
+    }
+
     #[test]
     fn test_manifest_includes_normal_and_dark_filenames() {
         let tmp = TempDir::new("gnome-manifest-normal-dark");
         let target_base = tmp.path();
 
         let title: Localized<String> = localized_default_en_us("Kusa", "Grass");
-        let normal_path = target_base.join("usr/share/wallpapers/Kusa/contents/images/7680x4320.jpg");
+        let normal_path =
+            target_base.join("usr/share/wallpapers/Kusa/contents/images/7680x4320.jpg");
         let dark_path =
             target_base.join("usr/share/wallpapers/Kusa/contents/images_dark/7680x4320-dark.jpg");
         let wallpaper = Wallpaper {
@@ -281,21 +303,23 @@ mod test {
                 wallpaper_file(normal_path, WallpaperKind::Normal, 7680, 4320),
                 wallpaper_file(dark_path, WallpaperKind::Dark, 7680, 4320),
             ],
-            primary_color: hex_color::HexColor::rgb(2, 60, 136),
-            secondary_color: hex_color::HexColor::rgb(87, 137, 202),
             color_shading_type: ColorShadingType::Solid,
             options: PictureOptions::Wallpaper,
+            colors_overrides: get_color_overrides(),
+            colors: RefCell::new(HashMap::new()),
         };
 
         GNOMEMetadataGenerator::generate_metadata(
             target_base,
             &wallpaper,
-            Resolution { width: 500, height: 500 },
+            Resolution {
+                width: 500,
+                height: 500,
+            },
         )
         .unwrap();
 
-        let manifest_path =
-            target_base.join("usr/share/gnome-background-properties/Kusa.xml");
+        let manifest_path = target_base.join("usr/share/gnome-background-properties/Kusa.xml");
         let manifest = fs::read_to_string(&manifest_path).unwrap();
         let expected = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
@@ -331,16 +355,19 @@ mod test {
                 wallpaper_file(wp1, WallpaperKind::Normal, 1920, 1080),
                 wallpaper_file(wp2, WallpaperKind::Normal, 3840, 2160),
             ],
-            primary_color: hex_color::HexColor::rgb(2, 60, 136),
-            secondary_color: hex_color::HexColor::rgb(87, 137, 202),
             color_shading_type: ColorShadingType::Solid,
             options: PictureOptions::Wallpaper,
+            colors_overrides: get_color_overrides(),
+            colors: RefCell::new(HashMap::new()),
         };
 
         GNOMEMetadataGenerator::generate_metadata(
             target_base,
             &wallpaper,
-            Resolution { width: 500, height: 500 },
+            Resolution {
+                width: 500,
+                height: 500,
+            },
         )
         .unwrap();
 
@@ -358,8 +385,7 @@ mod test {
 </background>"#;
         assert_eq!(list_xml, expected_list);
 
-        let manifest_path =
-            target_base.join("usr/share/gnome-background-properties/Kusa.xml");
+        let manifest_path = target_base.join("usr/share/gnome-background-properties/Kusa.xml");
         let manifest = fs::read_to_string(&manifest_path).unwrap();
         let expected_manifest = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">

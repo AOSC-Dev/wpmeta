@@ -1,5 +1,6 @@
 pub mod generate;
 pub mod input;
+mod palette;
 pub mod walk;
 
 use clap::Parser;

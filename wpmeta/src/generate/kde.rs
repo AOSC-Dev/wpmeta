@@ -4,11 +4,12 @@
 //! `contents/screenshot.jpg` preview.
 
 use eyre::Result;
+use hex_color::HexColor;
 use log::info;
 use serde::Serialize;
 use serde::ser::{SerializeMap, Serializer};
 
-use super::{Author, MetadataGenerator, Resolution, Wallpaper, write_file};
+use super::{Author, MetadataGenerator, Resolution, Wallpaper, WallpaperKind, write_file};
 use localized::Localized;
 use std::path::Path;
 
@@ -37,11 +38,22 @@ struct KPluginMetadataInner<'a> {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct KPluginMetadata<'a> {
-    k_plugin: KPluginMetadataInner<'a>,
+struct AccentColors {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    light: Option<HexColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dark: Option<HexColor>,
 }
 
-/// Generates KDE wallpaper `metadata.json` for a single [`crate::generate::Wallpaper`].
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct KPluginMetadata<'a> {
+    k_plugin: KPluginMetadataInner<'a>,
+    #[serde(rename = "X-KDE-PlasmaImageWallpaper-AccentColor")]
+    accent_colors: AccentColors,
+}
+
+/// Generates KDE wallpaper `metadata.json` for a single [`Wallpaper`].
 #[derive(Copy, Clone, Debug)]
 pub struct KDEMetadataGenerator;
 
@@ -102,6 +114,12 @@ impl<'a> KPluginMetadata<'a> {
             .iter()
             .map(|a| KPluginAuthor::from(*a))
             .collect();
+        let normal_accent = src
+            .get_colors(WallpaperKind::Normal)?
+            .map(|(_, accent)| accent);
+        let dark_accent = src
+            .get_colors(WallpaperKind::Dark)?
+            .map(|(_, accent)| accent);
         Ok(Self {
             k_plugin: KPluginMetadataInner::new(
                 authors,
@@ -109,6 +127,10 @@ impl<'a> KPluginMetadata<'a> {
                 src.license.as_ref(),
                 src.title.into(),
             ),
+            accent_colors: AccentColors {
+                light: normal_accent,
+                dark: dark_accent,
+            },
         })
     }
 }
@@ -141,13 +163,16 @@ impl MetadataGenerator for KDEMetadataGenerator {
 
 #[cfg(test)]
 mod test {
+    use localized::Localized;
     use std::borrow::Cow;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::fs;
 
-    use localized::Localized;
-
     use super::KDEMetadataGenerator;
-    use crate::generate::test::{TempDir, localized_default_en_us, localized_default_zh_cn, wallpaper_file};
+    use crate::generate::test::{
+        TempDir, localized_default_en_us, localized_default_zh_cn, wallpaper_file,
+    };
     use crate::generate::{MetadataGenerator, Resolution};
     use crate::generate::{Wallpaper, WallpaperKind};
     use crate::input::Author;
@@ -177,22 +202,40 @@ mod test {
                 wallpaper_file(normal_path, WallpaperKind::Normal, 1, 1),
                 wallpaper_file(dark_path, WallpaperKind::Dark, 1, 1),
             ],
-            primary_color: hex_color::HexColor::rgb(2, 60, 136),
-            secondary_color: hex_color::HexColor::rgb(87, 137, 202),
             color_shading_type: crate::input::ColorShadingType::Solid,
             options: crate::input::PictureOptions::Wallpaper,
+            colors_overrides: HashMap::from([
+                (
+                    WallpaperKind::Normal,
+                    (
+                        Some(hex_color::HexColor::rgb(2, 60, 136)),
+                        Some(hex_color::HexColor::rgb(2, 60, 136)),
+                    ),
+                ),
+                (
+                    WallpaperKind::Dark,
+                    (
+                        Some(hex_color::HexColor::rgb(87, 137, 202)),
+                        Some(hex_color::HexColor::rgb(87, 137, 202)),
+                    ),
+                ),
+            ]),
+            colors: RefCell::new(HashMap::new()),
         };
 
         KDEMetadataGenerator::generate_metadata(
             target_base,
             &wallpaper,
-            Resolution { width: 500, height: 500 },
+            Resolution {
+                width: 500,
+                height: 500,
+            },
         )
         .unwrap();
 
         let manifest_path = target_base.join("usr/share/wallpapers/Kusa/metadata.json");
         let content = fs::read_to_string(&manifest_path).unwrap();
-        let expected = r#"{
+        let expected = r##"{
   "KPlugin": {
     "Authors": [
       {
@@ -205,8 +248,12 @@ mod test {
     "License": "CC BY-SA 4.0",
     "Name": "Kusa",
     "Name[en_US]": "Grass"
+  },
+  "X-KDE-PlasmaImageWallpaper-AccentColor": {
+    "Light": "#023C88",
+    "Dark": "#5789CA"
   }
-}"#;
+}"##;
         assert_eq!(content, expected);
     }
 }
