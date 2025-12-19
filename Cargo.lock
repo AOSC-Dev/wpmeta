@@ -731,7 +731,7 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "localized"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_test",
@@ -1745,7 +1745,7 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 
 [[package]]
 name = "wpmeta"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "colored",
